@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@theme {
+  --color-mystic-bg: #1a0a2e;
+  --color-mystic-deep: #0d0520;
+  --color-mystic-purple: #2d1b69;
+  --color-mystic-violet: #7b2ff7;
+  --color-mystic-gold: #d4af37;
+  --color-mystic-gold-light: #f0d060;
+  --color-mystic-blue: #4fc3f7;
+  --color-mystic-pink: #e91e8c;
+  --color-glass: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+  --font-display: 'Cinzel Decorative', serif;
+  --font-body: 'Noto Sans TC', sans-serif;
+  --font-accent: 'Medula One', cursive;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; background: var(--color-mystic-bg); }
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-mystic-bg);
+  color: #e0d6f0;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+#root { width: 100%; max-width: 100%; margin: 0; text-align: left; border: none; }
+
+@keyframes crystalFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  25% { transform: translateY(-15px) rotate(1deg); }
+  50% { transform: translateY(-25px) rotate(0deg); }
+  75% { transform: translateY(-15px) rotate(-1deg); }
+}
+
+@keyframes crystalGlow {
+  0%, 100% { box-shadow: 0 0 40px rgba(123,47,247,0.6), 0 0 80px rgba(212,175,55,0.3); }
+  50% { box-shadow: 0 0 60px rgba(123,47,247,0.8), 0 0 120px rgba(212,175,55,0.5); }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes nebula {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes pulseGold {
+  0%, 100% { box-shadow: 0 0 10px rgba(212,175,55,0.3); }
+  50% { box-shadow: 0 0 30px rgba(212,175,55,0.8), 0 0 60px rgba(212,175,55,0.4); }
+}
+
+@keyframes stardust {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-80px) scale(0); opacity: 0; }
+}
+
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.crystal-float { animation: crystalFloat 4s ease-in-out infinite; }
+.crystal-glow { animation: crystalGlow 3s ease-in-out infinite; }
+.twinkle-star { animation: twinkle var(--dur, 3s) ease-in-out infinite; animation-delay: var(--del, 0s); }
+.nebula-bg { animation: nebula 20s ease infinite; background-size: 400% 400%; }
+.pulse-gold { animation: pulseGold 2s ease-in-out infinite; }
+.spin-slow { animation: spinSlow 30s linear infinite; }
+.fade-in-up { animation: fadeInUp 0.8s ease-out forwards; }
+
+.glass {
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+}
+
+.glass-strong {
+  background: rgba(26,10,46,0.85);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid rgba(212,175,55,0.2);
+  border-radius: 16px;
+}
+
+.card-3d { perspective: 1000px; }
+.card-inner { transition: transform 0.8s cubic-bezier(0.4,0,0.2,1); transform-style: preserve-3d; }
+.card-flipped .card-inner { transform: rotateY(180deg); }
+.card-front, .card-back { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.card-back { transform: rotateY(180deg); }
+
+.gold-border { position: relative; }
+.gold-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #d4af37, #f0d060, #d4af37, #b8860b);
+  z-index: -1;
+}
+
+.timeline-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  cursor: grab;
+}
+.timeline-scroll:active { cursor: grabbing; }
+.timeline-scroll::-webkit-scrollbar { height: 4px; }
+.timeline-scroll::-webkit-scrollbar-thumb { background: var(--color-mystic-gold); border-radius: 2px; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-mystic-deep); }
+::-webkit-scrollbar-thumb { background: var(--color-mystic-violet); border-radius: 3px; }
+
+::selection { background: rgba(212,175,55,0.3); color: #fff; }
