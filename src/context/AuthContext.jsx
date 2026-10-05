@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { ORDER_STATUS } from '../utils/payment';
+import { ORDER_STATUS, PAYMENT_CHANNELS } from '../utils/payment';
+import { analyzeReceipt } from '../utils/gemini';
 
 const AuthContext = createContext(null);
 const ADMIN_USER = 'kclee1654';
@@ -89,8 +90,8 @@ export function AuthProvider({ children }) {
 
   const markPaid = () => { setIsPaid(true); localStorage.setItem(PAID_KEY, 'true'); };
 
-  // Order management
-  const createOrder = (channel, amountTWD, amountUSD, receiptData) => {
+  // Order management with Gemini AI review
+  const createOrder = async (channel, amountTWD, amountUSD, receiptData) => {
     if (!user) return { success: false, error: '請先登入' };
     
     const order = {
@@ -107,25 +108,61 @@ export function AuthProvider({ children }) {
       reviewedBy: null,
       aiScore: null,
       aiNotes: null,
+      aiDetails: null,
     };
 
-    // AI preliminary review (simulated)
-    const aiReview = simulateAIReview(receiptData, amountTWD);
-    order.aiScore = aiReview.score;
-    order.aiNotes = aiReview.notes;
-    order.status = aiReview.confident ? ORDER_STATUS.APPROVED : ORDER_STATUS.PENDING;
-
+    // Save order first with AI_REVIEWING status
     const allOrders = getOrders();
     allOrders.push(order);
     saveOrders(allOrders);
-    setOrders(allOrders);
+    setOrders([...allOrders]);
 
-    // If AI approved with high confidence, auto-unlock
-    if (order.status === ORDER_STATUS.APPROVED) {
-      markPaid();
+    // Call Gemini API for real AI review
+    try {
+      const channelInfo = PAYMENT_CHANNELS[channel];
+      const aiReview = await analyzeReceipt(
+        receiptData, 
+        amountTWD, 
+        amountUSD, 
+        channelInfo?.name || channel
+      );
+      
+      order.aiScore = aiReview.score;
+      order.aiNotes = aiReview.notes;
+      order.aiDetails = aiReview.details;
+      order.status = aiReview.confident ? ORDER_STATUS.APPROVED : ORDER_STATUS.PENDING;
+
+      // Update order in storage
+      const updatedOrders = getOrders();
+      const idx = updatedOrders.findIndex(o => o.id === order.id);
+      if (idx !== -1) {
+        updatedOrders[idx] = order;
+        saveOrders(updatedOrders);
+        setOrders(updatedOrders);
+      }
+
+      // If AI approved with high confidence, auto-unlock
+      if (order.status === ORDER_STATUS.APPROVED) {
+        markPaid();
+      }
+
+      return { success: true, orderId: order.id, status: order.status };
+    } catch (error) {
+      console.error('AI review failed:', error);
+      // If AI fails, mark as pending for manual review
+      order.status = ORDER_STATUS.PENDING;
+      order.aiNotes = 'AI 審核失敗，轉為人工審核';
+      
+      const updatedOrders = getOrders();
+      const idx = updatedOrders.findIndex(o => o.id === order.id);
+      if (idx !== -1) {
+        updatedOrders[idx] = order;
+        saveOrders(updatedOrders);
+        setOrders(updatedOrders);
+      }
+
+      return { success: true, orderId: order.id, status: ORDER_STATUS.PENDING };
     }
-
-    return { success: true, orderId: order.id, status: order.status };
   };
 
   const getUserOrders = () => {
@@ -183,39 +220,6 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-// Simulated AI review for receipt verification
-function simulateAIReview(receiptData, expectedAmount) {
-  if (!receiptData) {
-    return { score: 0, notes: '未上傳水單', confident: false };
-  }
-
-  // Simulate AI checks (in production, this would call a real AI service)
-  const checks = {
-    hasImage: receiptData.length > 1000,
-    imageQuality: Math.random() > 0.2, // 80% pass rate simulation
-    amountMatch: Math.random() > 0.15, // 85% match rate simulation
-    dateValid: Math.random() > 0.1, // 90% valid date simulation
-  };
-
-  const passedChecks = Object.values(checks).filter(Boolean).length;
-  const score = (passedChecks / Object.keys(checks).length) * 100;
-
-  let notes = [];
-  if (checks.hasImage) notes.push('✓ 水單圖片已接收');
-  if (checks.imageQuality) notes.push('✓ 圖片品質良好');
-  if (checks.amountMatch) notes.push('✓ 金額比對相符');
-  if (checks.dateValid) notes.push('✓ 日期有效');
-  if (!checks.imageQuality) notes.push('⚠ 圖片品質不佳，建議重新上傳');
-  if (!checks.amountMatch) notes.push('⚠ 金額可能不符，需人工複核');
-
-  // AI is confident if score >= 85
-  return {
-    score: Math.round(score),
-    notes: notes.join('，'),
-    confident: score >= 85,
-  };
 }
 
 export const useAuth = () => useContext(AuthContext);

@@ -63,7 +63,7 @@ export default function PaymentCTA() {
 
     setSubmitting(true);
     try {
-      const result = createOrder(
+      const result = await createOrder(
         selectedChannel.id,
         priceTWD,
         priceUSD,
@@ -79,6 +79,7 @@ export default function PaymentCTA() {
         }, 2000);
       }
     } catch (error) {
+      console.error('Submit error:', error);
       alert('提交失敗，請稍後再試');
     }
     setSubmitting(false);

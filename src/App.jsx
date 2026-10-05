@@ -12,6 +12,7 @@ import FAQ from './components/FAQ';
 import Footer from './components/Footer';
 import AuthModal from './components/AuthModal';
 import AdminPanel from './components/AdminPanel';
+import Chatbot from './components/Chatbot';
 
 function AppContent() {
   const [authOpen, setAuthOpen] = useState(false);
@@ -43,6 +44,7 @@ function AppContent() {
       <Footer />
       <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
       <AdminPanel isOpen={adminOpen} onClose={() => setAdminOpen(false)} />
+      <Chatbot />
     </div>
   );
 }
