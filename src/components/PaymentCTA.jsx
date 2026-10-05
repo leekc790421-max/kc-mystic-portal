@@ -1,25 +1,87 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { PAYMENT_CHANNELS, getExchangeRate, formatTWD, formatUSD, ORDER_STATUS, ORDER_STATUS_LABELS } from '../utils/payment';
 
-const BANK_INFO = [
-  { name: '臺灣銀行松山分行', swift: 'BKTWTWTP', code: '0040646', account: '004-064004306448' },
-  { name: '樂天國際商業銀行', code: '826', account: '8120101535981' },
-];
+const BASE_PRICE_TWD = 1888;
 
 export default function PaymentCTA() {
-  const { isPaid, markPaid, user } = useAuth();
+  const { isPaid, user, createOrder, getUserOrders } = useAuth();
   const [showPayModal, setShowPayModal] = useState(false);
-  const [showVerifyModal, setShowVerifyModal] = useState(false);
-  const [verifyCode, setVerifyCode] = useState('');
-  const [payMethod, setPayMethod] = useState(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [selectedChannel, setSelectedChannel] = useState(null);
+  const [exchangeRate, setExchangeRate] = useState(null);
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [receiptPreview, setReceiptPreview] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [orderResult, setOrderResult] = useState(null);
+  const [userOrders, setUserOrders] = useState([]);
 
-  const handleVerify = () => {
-    if (verifyCode.length >= 5) {
-      markPaid();
-      setShowVerifyModal(false);
-      setShowPayModal(false);
+  useEffect(() => {
+    getExchangeRate().then(setExchangeRate);
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      setUserOrders(getUserOrders());
     }
+  }, [user, isPaid]);
+
+  const priceTWD = BASE_PRICE_TWD;
+  const priceUSD = exchangeRate ? (priceTWD / exchangeRate) : null;
+
+  const handleChannelSelect = (channel) => {
+    setSelectedChannel(channel);
+    if (channel.id === 'C') {
+      // Payoneer - open in new tab
+      window.open(channel.link, '_blank');
+      setShowReceiptModal(true);
+    } else {
+      setShowReceiptModal(true);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('檔案大小不能超過 5MB');
+        return;
+      }
+      setReceiptFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setReceiptPreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmitReceipt = async () => {
+    if (!receiptPreview) {
+      alert('請上傳水單圖片');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const result = createOrder(
+        selectedChannel.id,
+        priceTWD,
+        priceUSD,
+        receiptPreview
+      );
+      setOrderResult(result);
+      setUserOrders(getUserOrders());
+      
+      if (result.status === ORDER_STATUS.APPROVED) {
+        setTimeout(() => {
+          setShowReceiptModal(false);
+          setShowPayModal(false);
+        }, 2000);
+      }
+    } catch (error) {
+      alert('提交失敗，請稍後再試');
+    }
+    setSubmitting(false);
   };
 
   const features = [
@@ -57,9 +119,21 @@ export default function PaymentCTA() {
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
           >
-            <div className="mb-8">
-              <p className="font-[family-name:var(--font-accent)] text-4xl text-mystic-gold mb-2">NT$1,888</p>
-              <p className="text-sm text-gray-400">單次買斷・永久解鎖</p>
+            <div className="mb-6">
+              <p className="font-[family-name:var(--font-accent)] text-4xl text-mystic-gold mb-2">
+                {formatTWD(priceTWD)}
+              </p>
+              {priceUSD && (
+                <p className="text-sm text-gray-400 mb-1">
+                  ≈ {formatUSD(priceUSD)} (即時匯率)
+                </p>
+              )}
+              {exchangeRate && (
+                <p className="text-xs text-gray-500">
+                  USD/TWD: {exchangeRate.toFixed(2)}
+                </p>
+              )}
+              <p className="text-sm text-gray-400 mt-2">單次買斷・永久解鎖</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left mb-8 max-w-lg mx-auto">
@@ -75,10 +149,38 @@ export default function PaymentCTA() {
               onClick={() => setShowPayModal(true)}
               className="px-8 py-3 rounded-full font-bold text-mystic-bg bg-gradient-to-r from-mystic-gold to-mystic-gold-light hover:shadow-lg hover:shadow-mystic-gold/30 transition-all duration-300 pulse-gold"
             >
-              立即解鎖 NT$1,888
+              立即解鎖 {formatTWD(priceTWD)}
             </button>
 
-            <p className="text-xs text-gray-500 mt-4">付款後自動解鎖 · 支援銀行轉帳 / Payoneer</p>
+            <p className="text-xs text-gray-500 mt-4">
+              匯款後上傳水單 → AI 初審 → 管理者放行 → 自動解鎖
+            </p>
+
+            {/* User Orders */}
+            {user && userOrders.length > 0 && (
+              <div className="mt-8 pt-6 border-t border-white/10">
+                <p className="text-sm text-gray-400 mb-3">你的訂單</p>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {userOrders.slice(0, 3).map(order => (
+                    <div key={order.id} className="glass p-3 text-left flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-gray-300">{order.id}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(order.createdAt).toLocaleString('zh-TW')}
+                        </p>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        order.status === ORDER_STATUS.APPROVED ? 'bg-green-500/20 text-green-400' :
+                        order.status === ORDER_STATUS.REJECTED ? 'bg-red-500/20 text-red-400' :
+                        'bg-yellow-500/20 text-yellow-400'
+                      }`}>
+                        {ORDER_STATUS_LABELS[order.status]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         ) : (
           <motion.div className="glass-strong p-8 text-center"
@@ -92,57 +194,175 @@ export default function PaymentCTA() {
           </motion.div>
         )}
 
+        {/* Payment Channel Selection Modal */}
         <AnimatePresence>
           {showPayModal && (
             <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowPayModal(false)} />
-              <motion.div className="relative glass-strong p-6 sm:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto"
+              <motion.div className="relative glass-strong p-6 sm:p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto"
                 onClick={e => e.stopPropagation()}
                 initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30 }}>
                 <button onClick={() => setShowPayModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">✕</button>
-                <h3 className="font-[family-name:var(--font-display)] text-lg text-mystic-gold mb-6">選擇付款方式</h3>
+                <h3 className="font-[family-name:var(--font-display)] text-lg text-mystic-gold mb-2">選擇付款方式</h3>
+                <p className="text-xs text-gray-400 mb-6">
+                  金額：{formatTWD(priceTWD)} {priceUSD && `≈ ${formatUSD(priceUSD)}`}
+                </p>
 
                 <div className="space-y-4">
-                  {BANK_INFO.map((bank, i) => (
-                    <div key={i} className="glass p-4">
-                      <p className="text-sm text-mystic-gold-light font-bold mb-2">{bank.name}</p>
-                      {bank.swift && <p className="text-xs text-gray-400">SWIFT: {bank.swift}</p>}
-                      <p className="text-xs text-gray-400">代碼: {bank.code}</p>
-                      <p className="text-xs text-gray-400">帳號: {bank.account}</p>
-                    </div>
-                  ))}
+                  {Object.values(PAYMENT_CHANNELS).map(channel => (
+                    <div key={channel.id} className="glass p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="text-sm text-mystic-gold-light font-bold">{channel.label}</p>
+                          <p className="text-xs text-gray-400">{channel.name}</p>
+                        </div>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 text-gray-400">
+                          {channel.currency}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mb-3">{channel.description}</p>
 
-                  <div className="glass p-4">
-                    <p className="text-sm text-mystic-gold-light font-bold mb-2">Payoneer 快速付款</p>
-                    <p className="text-xs text-gray-400 mb-2">透過 Payoneer 國際匯款</p>
-                    <a href="https://link.payoneer.com/Token?t=4D0FBCB1CAEE48E48FEACE39662D6BB7&src=mobile"
-                      target="_blank" rel="noopener noreferrer"
-                      className="inline-block px-4 py-2 rounded-full bg-mystic-violet/20 text-mystic-violet text-sm hover:bg-mystic-violet/30 transition-all">
-                      前往 Payoneer
-                    </a>
-                  </div>
+                      {channel.id === 'A' && (
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <p>銀行代碼：{channel.bankCode}</p>
+                          <p>帳號：{channel.account}</p>
+                          <p className="text-mystic-violet">戶名：KC Mystic Portal</p>
+                        </div>
+                      )}
 
-                  <div className="pt-4 border-t border-white/10">
-                    <p className="text-xs text-gray-400 mb-3">匯款後請填寫後五碼驗證：</p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        maxLength={5}
-                        value={verifyCode}
-                        onChange={e => setVerifyCode(e.target.value)}
-                        placeholder="匯款後五碼"
-                        className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:border-mystic-gold/50 focus:outline-none"
-                      />
-                      <button onClick={handleVerify}
-                        disabled={verifyCode.length < 5}
-                        className="px-4 py-2 rounded-lg bg-mystic-gold text-mystic-bg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-mystic-gold-light transition-all">
-                        驗證
+                      {channel.id === 'B' && (
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <p>SWIFT：{channel.swift}</p>
+                          <p>分行代碼：{channel.branchCode}</p>
+                          <p>帳號：{channel.account}</p>
+                          <p>銀行：{channel.bankName}</p>
+                          <p className="text-gray-500 text-[10px]">{channel.address}</p>
+                        </div>
+                      )}
+
+                      {channel.id === 'C' && (
+                        <div className="text-xs text-gray-400">
+                          <p>點擊下方按鈕前往 Payoneer 付款</p>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => handleChannelSelect(channel)}
+                        className="mt-3 w-full py-2 rounded-lg bg-mystic-violet/20 text-mystic-violet text-sm hover:bg-mystic-violet/30 transition-all"
+                      >
+                        {channel.id === 'C' ? '前往 Payoneer' : '選擇此方式'}
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">驗證後將自動解鎖完整報告</p>
-                  </div>
+                  ))}
                 </div>
+
+                <p className="text-xs text-gray-500 mt-6 text-center">
+                  匯款後請上傳水單，AI 將自動初審，管理者確認後立即解鎖
+                </p>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Receipt Upload Modal */}
+        <AnimatePresence>
+          {showReceiptModal && (
+            <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !submitting && setShowReceiptModal(false)} />
+              <motion.div className="relative glass-strong p-6 sm:p-8 max-w-md w-full"
+                onClick={e => e.stopPropagation()}
+                initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30 }}>
+                <button onClick={() => !submitting && setShowReceiptModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">✕</button>
+                
+                <h3 className="font-[family-name:var(--font-display)] text-lg text-mystic-gold mb-2">上傳水單</h3>
+                <p className="text-xs text-gray-400 mb-4">
+                  通道：{selectedChannel?.name} | 金額：{formatTWD(priceTWD)}
+                </p>
+
+                {orderResult ? (
+                  <div className="text-center py-4">
+                    {orderResult.status === ORDER_STATUS.APPROVED ? (
+                      <>
+                        <span className="text-5xl block mb-4">✓</span>
+                        <p className="text-mystic-gold text-lg mb-2">AI 初審通過！</p>
+                        <p className="text-sm text-gray-400">報告已自動解鎖</p>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-5xl block mb-4">📋</span>
+                        <p className="text-mystic-gold text-lg mb-2">水單已提交</p>
+                        <p className="text-sm text-gray-400 mb-4">訂單編號：{orderResult.orderId}</p>
+                        <p className="text-xs text-gray-500">
+                          AI 初審中，管理者確認後將自動解鎖。請至「你的訂單」查看狀態。
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-4">
+                      <label className="block text-sm text-gray-300 mb-2">上傳水單圖片</label>
+                      <div className="border-2 border-dashed border-white/20 rounded-lg p-6 text-center hover:border-mystic-gold/50 transition-colors cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                          id="receipt-upload"
+                        />
+                        <label htmlFor="receipt-upload" className="cursor-pointer">
+                          {receiptPreview ? (
+                            <img src={receiptPreview} alt="Receipt" className="max-h-40 mx-auto rounded" />
+                          ) : (
+                            <>
+                              <span className="text-3xl block mb-2">📄</span>
+                              <p className="text-sm text-gray-400">點擊上傳水單圖片</p>
+                              <p className="text-xs text-gray-500 mt-1">支援 JPG、PNG，最大 5MB</p>
+                            </>
+                          )}
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="glass p-3 mb-4">
+                      <p className="text-xs text-gray-400 mb-2">匯款資訊：</p>
+                      {selectedChannel?.id === 'A' && (
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <p>銀行：樂天國際商業銀行 ({selectedChannel.bankCode})</p>
+                          <p>帳號：{selectedChannel.account}</p>
+                          <p>金額：{formatTWD(priceTWD)}</p>
+                        </div>
+                      )}
+                      {selectedChannel?.id === 'B' && (
+                        <div className="text-xs text-gray-400 space-y-1">
+                          <p>銀行：臺灣銀行松山分行</p>
+                          <p>SWIFT：{selectedChannel.swift}</p>
+                          <p>帳號：{selectedChannel.account}</p>
+                          <p>金額：{formatUSD(priceUSD)}</p>
+                        </div>
+                      )}
+                      {selectedChannel?.id === 'C' && (
+                        <div className="text-xs text-gray-400">
+                          <p>Payoneer 付款金額：{formatUSD(priceUSD)}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={handleSubmitReceipt}
+                      disabled={!receiptPreview || submitting}
+                      className="w-full py-2.5 rounded-full bg-gradient-to-r from-mystic-gold to-mystic-gold-light text-mystic-bg font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-mystic-gold/20 transition-all"
+                    >
+                      {submitting ? '提交中...' : '提交水單'}
+                    </button>
+
+                    <p className="text-xs text-gray-500 mt-3 text-center">
+                      提交後 AI 將自動初審，管理者確認後解鎖
+                    </p>
+                  </>
+                )}
               </motion.div>
             </motion.div>
           )}
